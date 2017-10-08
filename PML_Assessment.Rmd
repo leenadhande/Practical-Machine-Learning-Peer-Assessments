@@ -1,0 +1,153 @@
+---
+title: "Practical Machine Learning Peer Assessments"
+author: "Leena Dhande"
+date: "October 8, 2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Executive Summary
+This document presents the results of the Practical Machine Learning Peer Assessments in a report using a single R markdown document that can be processed by knitr and be transformed into an HTML file.
+
+## Introduction
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it.
+
+In this project, the goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants.They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset).
+
+## Data
+The training data for this project are downloaded from: https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+
+The test data are downloaded from: https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+
+The data for this project come from this source: http://groupware.les.inf.puc-rio.br/har.
+
+It is worth citing Groupware@LES for being generous in allowing their data to be used for this assignment.
+
+## Goal of the assignment
+1) Predicting the manner in which the participants did the exercise. Refer to the "classe" variable in the training set. All other variables can be used as predictor.
+
+2) Show how the model was built, performed cross validation, and expectation of the sample error and reasons of choices made.
+
+3) Use the prediction model to predict 20 different test cases.
+
+## Data Preprocessing
+
+```{r Load Library and Dataset}
+setwd("D:/Leena/Data Science")
+library(caret)
+library(rpart)
+library(knitr)
+library(randomForest)
+library(ElemStatLearn)
+library(corrplot)
+trainurl <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+testurl <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+trainFile <- "./data/pml-training.csv"
+testFile  <- "./data/pml-testing.csv"
+if (!file.exists("./data")) {
+  dir.create("./data")
+}
+if (!file.exists(trainFile)) {
+  download.file(trainurl, destfile=trainFile)
+}
+if (!file.exists(testFile)) {
+  download.file(testurl, destfile=testFile)
+}
+trainRaw <- read.csv("./data/pml-training.csv",header=T,sep=",",na.strings=c("NA",""))
+testRaw <- read.csv("./data/pml-testing.csv",header=T,sep=",",na.strings=c("NA",""))
+dim(trainRaw)
+dim(testRaw)
+```
+
+The training data set contains 19622 observations and 160 variables, while the testing data set contains 20 observations and 160 variables. The "classe" variable in the training set is the outcome to predict.
+
+## Data Sets Partitioning Definitions
+```{r Partitioning}
+trainRaw <- trainRaw[,-1] # Remove the first column that represents a ID Row
+inTrain = createDataPartition(trainRaw$classe, p=0.60, list=F)
+training = trainRaw[inTrain,]
+validating = trainRaw[-inTrain,]
+```
+
+## Data Cleaning
+A random forest model is chosen and the data set must first be checked on possibility of columns without data.
+
+The decision is made whereby all the columns that having less than 60% of data filled are removed.
+```{r Number of columns with less than 60% of data}
+sum((colSums(!is.na(training[,-ncol(training)])) < 0.6*nrow(training))) 
+```
+
+Next criteria to remove columns that do not satisfy is applied before applying to the model.
+```{r remove columns}
+Keep <- c((colSums(!is.na(training[,-ncol(training)])) >= 0.6*nrow(training)))
+training   <-  training[,Keep]
+validating <- validating[,Keep]
+```
+
+## Modeling
+In random forests, there is no need for cross-validation or a separate test set to get an unbiased estimate of the test set error. It is estimated internally, during the execution. Therefore, the training of the model (Random Forest) is proceeded using the training data set.
+```{r Modelling}
+model <- randomForest(classe~.,data=training)
+model
+```
+
+## Model Evaluation
+Verification of the variable importance measures as produced by random Forest is as follows:
+```{r Model Evaluation}
+importance(model)
+```
+The model results is evaluated through the confusion Matrix.
+```{r confusion Matrix}
+confusionMatrix(predict(model,newdata=validating[,-ncol(validating)]),validating$classe)
+```
+
+The accurancy for the validating data set is calculated with the following formula:
+```{r accurancy}
+acrcy<-c(as.numeric(predict(model,newdata=validating[,-ncol(validating)])==validating$classe))
+acrcy<-sum(acrcy)*100/nrow(validating)
+```
+Model Accuracy as tested over Validation set = 99.8725465% The out-of-sample error is 0.13%, which is pretty low.
+
+## Model Test
+For the model testing, the new values are predicted using the testing dataset provided which was loaded earlier. Data cleaning was first performed and all columns of Testing data set are coerced for the same class of previous data set.
+
+```{r Model Test}
+testRaw <- testRaw[,-1] # Remove the first column that represents a ID Row
+testRaw <- testRaw[ , Keep] # Keep the same columns of testing dataset
+testRaw <- testRaw[,-ncol(testRaw)] # Remove the problem ID
+```
+
+## Transformations and Coercing of Testing Dataset
+Coerce testing dataset to same class and structure of training dataset
+```{r Transformations and Coercing of Testing}
+testing <- rbind(training[100, -59] , testRaw) 
+
+# Apply the ID Row to row.names and 100 for dummy row from testing dataset 
+row.names(testing) <- c(100, 1:20)
+```
+
+
+## Prediction with the Testing Dataset
+```{r Prediction}
+predictions <- predict(model,newdata=testing[-1,])
+predictions
+```
+
+## Generation of Answers Files for Assignment Submission
+The following function pml_write_files is to create the answers files for the Prediction Assignment Submission:
+```{r Final}
+pml_write_files = function(x){
+  n = length(x)
+  for(i in 1:n){
+    filename = paste0("./answers/problem_id_",i,".txt")
+    #write.table(x[i],file=filename,append = FALSE,quote=FALSE,row.names=FALSE,col.names=FALSE)
+  }
+}
+
+pml_write_files(predictions)
+```
+
+The predicted classes for the 20 tests are: B A B A A E D B A A B C B A E E A B B B.
